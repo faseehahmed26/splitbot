@@ -1,0 +1,24 @@
+fastapi
+uvicorn
+pydantic[dotenv] # For settings management and .env file loading
+pydantic-settings # Add pydantic-settings
+httpx # For WhatsAppInterface async HTTP calls
+redis # For ConversationState
+python-telegram-bot[job-queue] # For Telegram bot integration
+
+# OCR Providers
+google-cloud-vision
+
+# LLM Providers
+# google-generativeai # For Gemini (commented out for now)
+google-generativeai # For Gemini - Uncommenting and ensuring it's present
+groq # For Groq LLM service
+
+# Monitoring
+langfuse
+
+# Typing/Dev (optional, but good practice for type hints if not using a strict type checker)
+# typing_extensions 
+
+python-json-logger>=2.0.7
+tenacity>=8.2.3 
