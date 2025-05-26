@@ -372,4 +372,64 @@ Extract: total amount, currency, participants (including '{user_name}' if "me"/"
     async def generate_conversational_response(self, text_input: str, current_state: Optional[Dict[str, Any]] = None) -> str:
         logger.warning("GeminiService.generate_conversational_response is not fully implemented (google-genai SDK).")
         # If this made an LLM call, it would need to be updated to the new SDK style.
-        return "I'm still learning to chat with Gemini (using the new SDK)!" 
+        return "I'm still learning to chat with Gemini (using the new SDK)!"
+
+    async def interpret_split_instructions(
+        self, 
+        instruction_text: str, 
+        current_bill_data: Dict[str, Any], 
+        conversation_history: str,
+        user_name: str
+    ) -> Dict[str, Any]:
+        logger.info(f"[MOCK] GeminiService: interpret_split_instructions for user {user_name} - '{instruction_text}'")
+        # Simulate LLM processing based on instruction content for mock
+        total_bill = float(current_bill_data.get("total", 0))
+        currency = current_bill_data.get("currency", "$")
+        
+        if "equally" in instruction_text.lower() and total_bill > 0:
+            # Simplified participant extraction from instruction_text or use a default
+            participants_match = re.findall(r'between (.*) and (.*)|with (.*)', instruction_text, re.IGNORECASE)
+            # This is very basic, a real LLM would do better participant identification from history/context
+            participant_names = [name for group in participants_match for name in group if name and name.lower() != "me"]
+            if "me" in instruction_text.lower() or not participant_names: participant_names.append(user_name)
+            participant_names = list(set(name.strip().capitalize() for name in participant_names if name.strip()))
+            if not participant_names: participant_names = [user_name, "Friend 1"] # Fallback
+            
+            num_participants = len(participant_names)
+            amount_per_person = round(total_bill / num_participants, 2) if num_participants > 0 else total_bill
+            
+            return {
+                "total": total_bill,
+                "currency": currency,
+                "breakdown": {name: amount_per_person for name in participant_names},
+                "is_final": True,
+                "summary_text": f"Split {total_bill}{currency} equally among {num_participants} people: {amount_per_person}{currency} each."
+            }
+        elif "saquib will pay 50%" in instruction_text.lower() and total_bill > 0: # User example
+            saquib_pays = round(total_bill * 0.50, 2)
+            remaining = round(total_bill - saquib_pays, 2)
+            # Assuming "me" and "praneet" are the other two for this mock.
+            # A real LLM would infer this from conversation_history or bill_data.participants
+            me_pays = round(remaining / 2, 2)
+            praneet_pays = round(remaining / 2, 2)
+            return {
+                "total": total_bill, "currency": currency,
+                "breakdown": {"Saquib": saquib_pays, user_name: me_pays, "Praneet": praneet_pays},
+                "is_final": True,
+                "summary_text": f"Total: {total_bill}{currency}. Saquib pays {saquib_pays}{currency}. {user_name} & Praneet pay {me_pays}{currency} each."
+            }
+        else:
+            return {"is_final": False, "clarification_needed": "I didn't fully understand the split. Can you rephrase? E.g., 'split equally between me and John', or 'item 1 for me, rest for John'."}
+
+    async def apply_split_adjustment(
+        self, 
+        adjustment_text: str, 
+        current_split_data: Dict[str, Any],
+        current_bill_data: Dict[str, Any],
+        conversation_history: str,
+        user_name: str
+    ) -> Optional[Dict[str, Any]]:
+        logger.info(f"[MOCK] GeminiService: apply_split_adjustment for user {user_name} - '{adjustment_text}'")
+        # Mock: Assume any adjustment means we can't auto-apply, return None to re-prompt.
+        # A real implementation would try to parse adjustment_text and modify current_split_data.
+        return None 

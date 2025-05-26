@@ -61,39 +61,58 @@ class GoogleVisionOCR(OCRService):
         logger.debug("Calling Google Vision API: document_text_detection")
         return self.client.document_text_detection(image=image)
 
-    async def extract_text(self, image_bytes: bytes) -> str:
-        """Extracts all text from an image using Google Vision API's text_detection."""
-        # Apply decorator dynamically
-        @self.observe(metadata={"category": "ocr_processing", "ocr_method": "text_detection"})
-        async def _decorated_extract_text():
+    async def extract_text_from_bytes(self, image_bytes: bytes) -> str:
+        """Extracts text from image bytes using Google Cloud Vision API."""
+        if not self.client:
+            logger.error("Google Vision API client not initialized.")
+            self.client = self._get_client() 
             if not self.client:
-                logger.error("GoogleVisionOCR client not initialized. Cannot extract text.")
-                raise ConnectionRefusedError("OCR client not initialized.")
-            try:
-                image = vision.Image(content=image_bytes)
-                # Run the synchronous, retryable method in a thread
-                response = await asyncio.to_thread(self._text_detection_with_retry, image)
-                
-                if response.error.message:
-                    logger.error(f"Google Vision API error during text_detection: {response.error.message}")
-                    raise Exception(f"Google Vision API Error: {response.error.message}")
+                 return "Error: OCR client not available."
 
-                if response.text_annotations:
-                    # The first annotation is usually the full text
-                    full_text = response.text_annotations[0].description
-                    logger.info(f"Text extracted successfully. Length: {len(full_text)}")
-                    return full_text
-                else:
-                    logger.info("No text found in image by text_detection.")
-                    return ""
-            except RETRYABLE_GOOGLE_EXCEPTIONS as e: # Catch retryable exceptions if all retries fail
-                logger.error(f"Google Vision text_detection failed after retries: {e}", exc_info=True)
-                raise # Re-raise for decorator and caller to handle
-            except Exception as e:
-                logger.error(f"Exception during Google Vision text_detection: {e}", exc_info=True)
-                raise
-        return await _decorated_extract_text()
+        image = vision.Image(content=image_bytes)
         
+        generation_span = None
+        if self.langfuse_client: # Corrected: Use self.langfuse_client from base class
+            generation_span = self.langfuse_client.generation(
+                name="google_vision_ocr_bytes",
+                input={"image_size_bytes": len(image_bytes)},
+                model="google_cloud_vision_api",
+                metadata={"ocr_provider": "google_vision", "input_type": "bytes"}
+            )
+
+        try:
+            response = await asyncio.to_thread(self.client.text_detection, image=image)
+            if response.error.message:
+                logger.error(f"Google Vision API error: {response.error.message}")
+                if generation_span: generation_span.end(level="ERROR", status_message=response.error.message)
+                return f"OCR Error: {response.error.message}"
+
+            texts = response.text_annotations
+            extracted_text = texts[0].description if texts else ""
+            if generation_span: generation_span.end(output={"extracted_text_length": len(extracted_text)})
+            return extracted_text
+        except Exception as e:
+            logger.error(f"Exception during Google Vision OCR: {e}", exc_info=True)
+            if generation_span: generation_span.end(level="ERROR", status_message=str(e))
+            return f"OCR Exception: {str(e)}"
+
+    # Deprecate old extract_text or adapt it to use extract_text_from_bytes
+    async def extract_text(self, image_path_or_url: str) -> str:
+        logger.warning("OCRService.extract_text(path/url) is deprecated. Use extract_text_from_bytes().")
+        # Minimal implementation for deprecation path: try to read file if it's a local path
+        if not image_path_or_url.startswith(("http://", "https://", "gs://")):
+            try:
+                with open(image_path_or_url, "rb") as image_file:
+                    content = image_file.read()
+                return await self.extract_text_from_bytes(content)
+            except Exception as e:
+                logger.error(f"Failed to read local image file '{image_path_or_url}' for deprecated extract_text: {e}")
+                return f"Error reading file for OCR: {e}"
+        else:
+            # Handling URLs would require an HTTP client like aiohttp to fetch bytes first
+            logger.error(f"Cannot process URL '{image_path_or_url}' with deprecated extract_text without HTTP client.")
+            return "OCR Error: URL processing not supported in deprecated method."
+
     async def extract_structured_data(self, image_bytes: bytes) -> Dict[str, Any]:
         """
         Extracts structured data from a receipt image using Google Vision API's document_text_detection.

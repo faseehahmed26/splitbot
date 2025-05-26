@@ -420,3 +420,53 @@ Return a JSON object with the following structure:
 
     # The _track_llm_call method from LLMService base is available if needed,
     # but langfuse.generation() is used here for more detailed tracing per call. 
+
+    async def interpret_split_instructions(
+        self, 
+        instruction_text: str, 
+        current_bill_data: Dict[str, Any], 
+        conversation_history: str,
+        user_name: str
+    ) -> Dict[str, Any]:
+        logger.info(f"[MOCK] GroqService: interpret_split_instructions for user {user_name} - '{instruction_text}'")
+        # Simulate LLM processing based on instruction content for mock (same as Gemini for now)
+        total_bill = float(current_bill_data.get("total", 0))
+        currency = current_bill_data.get("currency", "$")
+
+        if "equally" in instruction_text.lower() and total_bill > 0:
+            participants_match = re.findall(r'between (.*) and (.*)|with (.*)', instruction_text, re.IGNORECASE)
+            participant_names = [name for group in participants_match for name in group if name and name.lower() != "me"]
+            if "me" in instruction_text.lower() or not participant_names: participant_names.append(user_name)
+            participant_names = list(set(name.strip().capitalize() for name in participant_names if name.strip()))
+            if not participant_names: participant_names = [user_name, "Friend 1"]
+            
+            num_participants = len(participant_names)
+            amount_per_person = round(total_bill / num_participants, 2) if num_participants > 0 else total_bill
+            return {
+                "total": total_bill, "currency": currency,
+                "breakdown": {name: amount_per_person for name in participant_names},
+                "is_final": True,
+                "summary_text": f"Split {total_bill}{currency} equally: {amount_per_person}{currency} each."
+            }
+        elif "saquib will pay 50%" in instruction_text.lower() and total_bill > 0:
+            saquib_pays = round(total_bill * 0.50, 2); remaining = round(total_bill - saquib_pays, 2)
+            me_pays = round(remaining / 2, 2); praneet_pays = round(remaining / 2, 2)
+            return {
+                "total": total_bill, "currency": currency,
+                "breakdown": {"Saquib": saquib_pays, user_name: me_pays, "Praneet": praneet_pays},
+                "is_final": True,
+                "summary_text": f"Total: {total_bill}{currency}. Saquib: {saquib_pays}{currency}. Others: {me_pays}{currency} each."
+            }
+        else:
+            return {"is_final": False, "clarification_needed": "I couldn't parse that split. Try simpler terms?"}
+
+    async def apply_split_adjustment(
+        self, 
+        adjustment_text: str, 
+        current_split_data: Dict[str, Any],
+        current_bill_data: Dict[str, Any],
+        conversation_history: str,
+        user_name: str
+    ) -> Optional[Dict[str, Any]]:
+        logger.info(f"[MOCK] GroqService: apply_split_adjustment for user {user_name} - '{adjustment_text}'")
+        return None # Mock: always fails to adjust automatically 

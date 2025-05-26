@@ -6,13 +6,8 @@ httpx # For WhatsAppInterface async HTTP calls
 redis # For ConversationState
 python-telegram-bot[job-queue] # For Telegram bot integration
 
-# OCR Providers
-google-cloud-vision
-
-# LLM Providers
-# google-generativeai # For Gemini (commented out for now)
-google-generativeai # For Gemini - Uncommenting and ensuring it's present
-groq # For Groq LLM service
+# LLM Provider
+google-generativeai
 
 # Monitoring
 langfuse

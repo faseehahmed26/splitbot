@@ -17,7 +17,7 @@ from core.processor import BillSplitProcessor # Import BillSplitProcessor
 from core.state_manager import ConversationState
 from core.fallback_state_manager import InMemoryStateStore # Import InMemoryStateStore
 from services.llm.base import LLMService # For type hinting
-from services.ocr.base import OCRService # For type hinting
+# Removed OCRService import
 from monitoring.langfuse_client import LangfuseMonitor
 
 import redis # type: ignore
@@ -89,46 +89,20 @@ bill_processor: BillSplitProcessor | None = None # Add bill_processor global
 # Initialize Langfuse client (used by services and processor)
 langfuse_monitor_instance = LangfuseMonitor()
 
-# Initialize services (LLM, OCR, StateManager)
+# Initialize services (LLM, StateManager)
 llm_service_instance = None
-settings.LLM_PROVIDER="gemini"
-if settings.LLM_PROVIDER:
-    logger.info(f"Attempting to initialize LLM provider: {settings.LLM_PROVIDER}")
-    if settings.LLM_PROVIDER.lower() == "groq":
-        from services.llm.groq import GroqService
-        if settings.GROQ_API_KEY:
-            try:
-                llm_service_instance = GroqService(langfuse_monitor=langfuse_monitor_instance)
-                logger.info(f"GroqService initialized with model {settings.GROQ_MODEL_NAME}.")
-            except Exception as e:
-                logger.error(f"Failed to initialize GroqService: {e}", exc_info=True)
-        else:
-            logger.error("GROQ_API_KEY not set, cannot initialize GroqService.")
-    elif settings.LLM_PROVIDER.lower() == "gemini":
-        from services.llm.gemini import GeminiService # Import GeminiService
-        if settings.GEMINI_API_KEY_1: # Gemini uses GEMINI_API_KEY as per GeminiService __init__
-            try:
-                llm_service_instance = GeminiService(langfuse_monitor=langfuse_monitor_instance)
-                logger.info(f"GeminiService initialized with model {settings.GEMINI_MODEL_NAME}.")
-            except Exception as e:
-                logger.error(f"Failed to initialize GeminiService: {e}", exc_info=True)
-        else:
-            logger.error("GEMINI_API_KEY not set (required for Gemini), cannot initialize GeminiService.")
+if settings.LLM_PROVIDER.lower() == "gemini":
+    from services.llm.gemini import GeminiService
+    if settings.GEMINI_API_KEY_1:
+        try:
+            llm_service_instance = GeminiService(langfuse_monitor=langfuse_monitor_instance)
+            logger.info(f"GeminiService initialized with model {settings.GEMINI_MODEL_NAME}.")
+        except Exception as e:
+            logger.error(f"Failed to initialize GeminiService: {e}", exc_info=True)
     else:
-        logger.error(f"Unsupported LLM_PROVIDER specified: {settings.LLM_PROVIDER}. Please choose 'groq' or 'gemini'.")
+        logger.error("GEMINI_API_KEY_1 not set, cannot initialize GeminiService.")
 else:
-    logger.warning("LLM_PROVIDER not set. LLM features will be unavailable.")
-
-ocr_service_instance = None
-if settings.OCR_PROVIDER:
-    from services.ocr.google_vision import GoogleVisionOCR # Example
-    try:
-        ocr_service_instance = GoogleVisionOCR(langfuse_monitor=langfuse_monitor_instance)
-        logger.info(f"OCRService ({settings.OCR_PROVIDER}) initialized.")
-    except Exception as e:
-        logger.error(f"Failed to initialize OCRService ({settings.OCR_PROVIDER}): {e}")
-else:
-    logger.warning("OCR_PROVIDER not set. OCR features will be unavailable.")
+    logger.warning(f"LLM_PROVIDER is set to '{settings.LLM_PROVIDER}', but only 'gemini' is directly supported in this simplified setup. LLM features may be unavailable.")
 
 # Initialize Async Redis Client
 redis_client_instance: Optional[AsyncRedis] = None
@@ -199,22 +173,20 @@ async def lifespan(app_param: FastAPI):
     # Current BillSplitProcessor constructor takes langfuse_client (SDK client).
     raw_langfuse_sdk_client = langfuse_monitor_instance.get_client() # Get for processor
 
-    if llm_service_instance and ocr_service_instance and state_manager_instance and raw_langfuse_sdk_client:
+    if llm_service_instance and state_manager_instance and raw_langfuse_sdk_client:
         bill_processor = BillSplitProcessor(
             llm_service=llm_service_instance,
-            ocr_service=ocr_service_instance,
             state_manager=state_manager_instance,
-            langfuse_client=raw_langfuse_sdk_client # Pass the SDK client here
+            langfuse_client=raw_langfuse_sdk_client
         )
         logger.info("BillSplitProcessor initialized successfully.")
     else:
         # Log detailed reasons for failure
         missing_deps = []
         if not llm_service_instance: missing_deps.append("LLMService")
-        if not ocr_service_instance: missing_deps.append("OCRService")
         if not state_manager_instance: missing_deps.append("StateManager")
         if not raw_langfuse_sdk_client: missing_deps.append("LangfuseClient (SDK)")
-        logger.error(f"BillSplitProcessor could not be initialized. Missing: {', '.join(missing_deps)}.")
+        logger.error(f"BillSplitProcessor could not be initialized. Missing: {', '.join(missing_deps) if missing_deps else 'Unknown reasons'}.")
         bill_processor = None
 
     # Initialize TelegramInterface instance, now passing the processor and langfuse_monitor
@@ -223,17 +195,18 @@ async def lifespan(app_param: FastAPI):
             telegram_interface = TelegramInterface(
                 token=settings.TELEGRAM_BOT_TOKEN,
                 processor=bill_processor,
-                langfuse_monitor=langfuse_monitor_instance # Pass monitor
+                langfuse_monitor=langfuse_monitor_instance
             )
             try:
                 await telegram_interface.initialize_application()
-                if settings.TELEGRAM_WEBHOOK_URL:
+                logger.info(f"TELEGRAM_WEBHOOK_URL from settings: {settings.TELEGRAM_WEBHOOK_URL_1}") # Log the actual setting value
+                if settings.TELEGRAM_WEBHOOK_URL_1:
                     await telegram_interface.set_telegram_webhook(
-                        webhook_url=settings.TELEGRAM_WEBHOOK_URL,
+                        webhook_url=settings.TELEGRAM_WEBHOOK_URL_1,
                         secret_token=settings.TELEGRAM_WEBHOOK_SECRET
                     )
                 else:
-                    logger.warning("TELEGRAM_WEBHOOK_URL not set. Webhook for Telegram bot will not be configured.")
+                    logger.warning("TELEGRAM_WEBHOOK_URL_1 not set. Webhook for Telegram bot will not be configured. Bot will use polling.")
             except Exception as e:
                 logger.error(f"Error during Telegram interface setup: {e}", exc_info=True)
                 telegram_interface = None # Failed to initialize or set webhook
@@ -244,17 +217,7 @@ async def lifespan(app_param: FastAPI):
         logger.error("TELEGRAM_BOT_TOKEN not set. Telegram interface cannot be initialized.")
         telegram_interface = None
 
-    # Verify Google credentials (can remain here)
-    if settings.OCR_PROVIDER == "google_vision" and settings.GOOGLE_APPLICATION_CREDENTIALS:
-        credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
-        abs_credentials_path = os.path.abspath(credentials_path)
-        if not os.path.exists(credentials_path):
-            logger.error(f"Google credentials file NOT FOUND at configured path: {credentials_path} (Absolute: {abs_credentials_path})")
-            logger.error("Please ensure GOOGLE_APPLICATION_CREDENTIALS in your .env file points to the correct JSON key file.")
-        else:
-            logger.info(f"Google credentials file found at: {credentials_path} (Absolute: {abs_credentials_path})")
-    elif settings.OCR_PROVIDER == "google_vision" and not settings.GOOGLE_APPLICATION_CREDENTIALS:
-        logger.warning("OCR_PROVIDER is 'google_vision' but GOOGLE_APPLICATION_CREDENTIALS is not set in .env. Google Vision OCR might not work.")
+    # Removed Google credentials check related to OCR
     
     # Assign pre-initialized langfuse client to the global name used by lifespan shutdown
     # langfuse_client = langfuse_client_instance # This global is the SDK client for shutdown. Monitor has it.
@@ -271,7 +234,7 @@ async def lifespan(app_param: FastAPI):
             await redis_client_instance.ping()
             logger.info("Successfully connected to Async Redis.")
         except Exception as e:
-            logger.error(f"Async Redis ping failed on startup: {e}. State management may be impaired.")
+            logger.error(f"Async Redis ping failed on startup: {e}.")
             # Depending on policy, we might choose to not start or set state_manager to a fallback here.
             # For now, we'll rely on ConversationState methods to handle runtime errors.
     else:
@@ -343,7 +306,7 @@ async def telegram_webhook_post(request: Request):
         if settings.TELEGRAM_WEBHOOK_SECRET:
             secret_token_header = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
             if secret_token_header != settings.TELEGRAM_WEBHOOK_SECRET:
-                logger.warning(f"Telegram webhook secret token mismatch. Header: '{secret_token_header}', Expected: '{settings.TELEGRAM_WEBHOOK_SECRET}'")
+                logger.warning(f"Telegram webhook secret token mismatch. Header: '{secret_token_header}'")
                 raise HTTPException(status_code=403, detail="Invalid secret token.")
             else:
                 logger.debug("Telegram webhook secret token verified successfully.")
@@ -368,33 +331,26 @@ async def health():
             redis_ok = True 
         except Exception as e:
             logger.debug(f"Health check: Redis ping failed: {e}")
-            pass
+            pass # Keep redis_ok as False
     
     langfuse_ok = langfuse_monitor_instance is not None and langfuse_monitor_instance.get_client() is not None
     
-    ocr_ready = ocr_service_instance is not None
-    if ocr_service_instance and hasattr(ocr_service_instance, 'client') and ocr_service_instance.client is None:
-        ocr_ready = False 
-
+    # OCR health check removed
+    # llm_ready status remains
     llm_ready = llm_service_instance is not None
-    if llm_service_instance and hasattr(llm_service_instance, 'client') and llm_service_instance.client is None:
+    if llm_service_instance and hasattr(llm_service_instance, 'client') and llm_service_instance.client is None: # Assuming client attribute indicates readiness
         llm_ready = False
 
-    # Fix: Use time.time() directly instead of asyncio.to_thread
     return {
         "status": "healthy",
-        "timestamp": time.time(),  # Changed this line
+        "timestamp": time.time(),
         "services": {
             "llm_service": {
                 "initialized": llm_service_instance is not None,
                 "provider": settings.LLM_PROVIDER if llm_service_instance else "Not Configured",
                 "client_ready": llm_ready
             },
-            "ocr_service": {
-                "initialized": ocr_service_instance is not None,
-                "provider": settings.OCR_PROVIDER if ocr_service_instance else "Not Configured",
-                "client_ready": ocr_ready
-            },
+            # OCR service section removed from health check
             "redis": {
                 "configured": settings.REDIS_URL is not None,
                 "connected": redis_ok
@@ -412,7 +368,7 @@ async def health():
                 "initialized": bill_processor is not None
             },
             "telegram_interface": {
-                "initialized": telegram_interface is not None and telegram_interface._is_initialized
+                "initialized": telegram_interface is not None and getattr(telegram_interface, '_is_initialized', False)
             }
         }
     }
