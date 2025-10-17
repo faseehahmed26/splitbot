@@ -1,13 +1,10 @@
 # splitbot
 
-Splitbot is a Python application designed to [**Please describe the main purpose of splitbot here**]. 
+Splitbot is a Python application designed to Split Bills. 
 It appears to be a bot that interacts via interfaces like Telegram/Whatsapp and can process images (possibly for splitting bills or expenses).
 
 ## Features
 
-*   [**List key feature 1, e.g., Expense parsing from images**]
-*   [**List key feature 2, e.g., User state management**]
-*   [**List key feature 3, e.g., Interaction via Telegram/Whatsapp**]
 *   Orchestrates various services (LLM, OCR, Voice).
 *   Includes monitoring capabilities.
 *   Containerized using Docker for easy deployment.
