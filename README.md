@@ -123,7 +123,6 @@ The `tests/` directory suggests that tests are available.
 
 ## License
 
-[**Specify the license for your project, e.g., MIT License. If you haven't chosen one, you might consider adding one.**]
 
 ---
 
